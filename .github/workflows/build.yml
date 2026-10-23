@@ -1,0 +1,184 @@
+name: Build Launchers
+
+# This repository is the build pipeline and nothing else. It holds no game code:
+# the code is checked out at run time from the private repository, built, and the
+# result is published to a release. Nothing is ever committed back here.
+#
+# It exists because Actions minutes are billed on a private repository and free on
+# a public one. The game stays private; only this workflow is public.
+#
+# A build does NOT put the new build where the public can reach it. The public
+# release keeps the build that is already out, and the new one is staged on the
+# private code repository, where nobody outside can get it.
+#
+# To make a build public, set the repository variable PUBLISH to "true" and re-run
+# this workflow. Until then, a new game build is nobody's but ours.
+
+"on":
+  workflow_dispatch:
+
+# Named here rather than taken from the environment: this workflow runs in the
+# public pipeline repository, and a staging build must never land in it.
+env:
+  CODE_REPO: Programmer7-dev/CraftedResistanceCode
+  PRIVATE_REPO: Programmer7-dev/CraftedResistanceCode
+  RELEASE_REPO: Programmer7-dev/CraftedResistance
+  TAG: Pre-release_v1.0
+
+jobs:
+  prepare:
+    name: Prepare the release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Make sure the public release exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if ! gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$RELEASE_REPO" \
+              --title "beta 1.0" \
+              --notes "The current beta of Crafted Resistance." \
+              --prerelease
+            echo "created the release in $RELEASE_REPO"
+          else
+            echo "the release already exists in $RELEASE_REPO"
+          fi
+        shell: bash
+
+  build-launcher:
+    name: Build Native Launcher
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        # The two macOS runners are named explicitly so the asset names are stable:
+        # macos-latest moves between architectures, and a download whose name does
+        # not say which one it is would be a coin flip for the person using it.
+        # macos-15 IS Apple Silicon; macos-15-intel is the Intel build.
+        include:
+          - os: windows-latest
+            label: windows
+          - os: ubuntu-latest
+            label: linux
+          - os: macos-15-intel
+            label: macos-x64
+          - os: macos-15
+            label: macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout the game code
+        # The private repository, with a token that can read it. No ref: the
+        # default branch is what is built.
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CODE_REPO }}
+          token: ${{ secrets.CODE_TOKEN }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 22
+
+      - name: Make Gradle executable
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+        shell: bash
+
+      - name: Build the GUI launcher jar
+        # The launcher is a Swing app with no third-party dependencies, so it builds
+        # as its own small jar. It ships next to crlaunch so the window opens
+        # without the game.
+        run: ./gradlew --console=plain launcherJar
+        shell: bash
+
+      - name: Build libs.zip (the install payload)
+        # The whole lib/ folder - the game jar AND the LWJGL jars with their natives.
+        # This is what the launcher downloads when the user installs a version.
+        run: ./gradlew --console=plain libsZip
+        shell: bash
+
+      - name: Install C compiler and NSIS (Windows)
+        # NSIS rather than jpackage's WiX installer: it can show a choice page and
+        # ask for a password only when the per-machine option is picked.
+        #
+        # choco's PATH change does not reach the shell that is already running, so
+        # the folders are put on GITHUB_PATH by hand.
+        if: runner.os == 'Windows'
+        run: |
+          choco install mingw nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
+          echo "C:\ProgramData\mingw64\mingw64\bin" >> $GITHUB_PATH
+          echo "C:\ProgramData\chocolatey\bin" >> $GITHUB_PATH
+        shell: bash
+
+      - name: Compile crlaunch
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            gcc -O2 -std=c99 -Wall -Wextra -o "build/launcher/crlaunch-${{ matrix.label }}.exe" launcher/crlaunch.c -mwindows
+          else
+            cc -O2 -std=c99 -Wall -Wextra -o "build/launcher/crlaunch-${{ matrix.label }}" launcher/crlaunch.c
+          fi
+        shell: bash
+
+      - name: Build the Windows installer (EXE)
+        if: runner.os == 'Windows'
+        run: bash .github/scripts/make-windows-installer.sh 1.0
+        shell: bash
+
+      - name: Build the macOS disk image (DMG)
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/make-macos-dmg.sh 1.0 ${{ matrix.label }}
+        shell: bash
+
+      - name: Build the Linux AppImage and .run installer
+        if: runner.os == 'Linux'
+        run: bash .github/scripts/make-linux-installers.sh 1.0
+        shell: bash
+
+      - name: Publish the installer to the release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PUBLISH_VAR: ${{ vars.PUBLISH }}
+        run: |
+          # The public release is only updated when this build is meant to be
+          # public. Until then it is staged on the private code repository.
+          if [ "${PUBLISH_VAR}" = "true" ]; then PUBLISH=true; else PUBLISH=false; fi
+          export PUBLISH
+          bash .github/scripts/publish.sh "$TAG" build/installer/*
+        shell: bash
+
+      - name: Publish libs.zip to the release
+        # The same file on every platform, and it is 129 MB, so it is published
+        # once. It is also what the launcher downloads when the user installs a
+        # version, so it has to be on the release either way.
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PUBLISH_VAR: ${{ vars.PUBLISH }}
+        run: |
+          if [ "${PUBLISH_VAR}" = "true" ]; then PUBLISH=true; else PUBLISH=false; fi
+          export PUBLISH
+          bash .github/scripts/publish.sh "$TAG" build/payload/libs.zip
+        shell: bash
+
+      - name: Publish the launcher to the release
+        # Nothing is uploaded as a workflow artifact: the artifact storage quota is
+        # finite and is only recalculated every few hours. Release assets are not
+        # the artifact quota, and they are where the website downloads from anyway.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          PUBLISH_VAR: ${{ vars.PUBLISH }}
+        run: |
+          if [ "${PUBLISH_VAR}" = "true" ]; then PUBLISH=true; else PUBLISH=false; fi
+          export PUBLISH
+          FILES=()
+          for f in build/launcher/crlaunch-*; do
+            if [ -f "$f" ]; then FILES+=("$f"); fi
+          done
+          FILES+=(build/launcher/launcher.jar)
+          bash .github/scripts/publish.sh "$TAG" "${FILES[@]}"
+        shell: bash
