@@ -41,8 +41,10 @@ jobs:
       # is what the SDK packages refuse to install without.
       - name: Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null
+          SDKMANAGER=$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
       # The desktop loads the 100+ MB of source art and shrinks it at start-up. A phone should
       # not carry that, so the same files are shrunk here into the app's assets.
