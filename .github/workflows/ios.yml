@@ -67,6 +67,9 @@ jobs:
           xcrun simctl launch "$DEVICE" com.craftedresistance.game
           sleep 10
           xcrun simctl io "$DEVICE" screenshot screenshot.png
+          # the device is held in portrait and the app draws landscape, so turn the picture
+          # upright to look at it
+          sips -r 90 screenshot.png >/dev/null
           ls -l screenshot.png
 
       - name: Upload the screenshot
