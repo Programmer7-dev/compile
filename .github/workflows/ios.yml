@@ -34,8 +34,13 @@ jobs:
           repository: ${{ env.CODE_REPO }}
           token: ${{ secrets.CODE_TOKEN }}
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen and Pillow
+        run: |
+          brew install xcodegen
+          python3 -m pip install --quiet pillow
+
+      - name: Shrink the artwork to tile size
+        run: python3 tools/shrink_textures.py src/main/resources/Images ios/Assets/Images
 
       - name: Generate the Xcode project
         working-directory: ios
