@@ -37,10 +37,11 @@ jobs:
       - name: Install XcodeGen and Pillow
         run: |
           brew install xcodegen
-          python3 -m pip install --quiet pillow
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet pillow
 
       - name: Shrink the artwork to tile size
-        run: python3 tools/shrink_textures.py src/main/resources/Images ios/Assets/Images
+        run: .venv/bin/python tools/shrink_textures.py src/main/resources/Images ios/Assets/Images
 
       - name: Generate the Xcode project
         working-directory: ios
