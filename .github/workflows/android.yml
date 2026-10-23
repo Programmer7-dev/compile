@@ -22,7 +22,7 @@ jobs:
   android:
     name: Android app
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
 
     steps:
       - name: Checkout the game code
@@ -69,3 +69,30 @@ jobs:
           name: android-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      # A build that compiles is not the same as a game that runs. This boots an emulator,
+      # installs the APK, starts it the way a launcher would, and photographs what came up.
+      - name: Run it on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot
+          script: |
+            set -x
+            adb install -r android/app/build/outputs/apk/release/app-release.apk
+            adb shell am start -W -n com.craftedresistance.game/com.craftedresistance.android.MainActivity
+            sleep 45
+            adb exec-out screencap -p > android-screenshot.png
+            echo "--- crashes, if any ---"
+            adb logcat -d -s AndroidRuntime:E | tail -60
+
+      - name: Upload the screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-screenshot
+          path: android-screenshot.png
+          if-no-files-found: warn
