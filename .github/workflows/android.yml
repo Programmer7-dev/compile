@@ -72,7 +72,12 @@ jobs:
 
       # A build that compiles is not the same as a game that runs. This boots an emulator,
       # installs the APK, starts it the way a launcher would, and photographs what came up.
+      #
+      # A runner without /dev/kvm emulates the whole phone in software, and the guest system
+      # sometimes dies under that. The APK is the deliverable, so a flaky emulator must not
+      # fail the build - but its screenshot and its log are still worth having.
       - name: Run it on an emulator
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -86,10 +91,14 @@ jobs:
             set -x
             adb install -r android/app/build/outputs/apk/release/app-release.apk
             adb shell am start -W -n com.craftedresistance.game/com.craftedresistance.android.MainActivity
-            sleep 45
+            sleep 60
+            adb shell pidof com.craftedresistance.game || echo "not running"
+            adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" || true
             adb exec-out screencap -p > android-screenshot.png
-            echo "--- crashes, if any ---"
-            adb logcat -d -s AndroidRuntime:E | tail -60
+            echo "--- crashes ---"
+            adb logcat -d -s AndroidRuntime:E | tail -40
+            echo "--- the game's own log ---"
+            adb logcat -d | grep -iE "craftedresistance|shader|textures" | tail -40
 
       - name: Upload the screenshot
         if: always()
