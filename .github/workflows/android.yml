@@ -76,6 +76,7 @@ jobs:
           name: android-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 3
 
       # A build that compiles is not the same as a game that runs. This boots an emulator,
       # installs the APK, starts it the way a launcher would, and photographs what came up.
@@ -114,3 +115,4 @@ jobs:
           name: android-screenshot
           path: android-screenshot.png
           if-no-files-found: warn
+          retention-days: 3
