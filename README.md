@@ -11,4 +11,7 @@ them to a release. Nothing is ever written back to this repository.
 - The downloads live on the website's release.
 - A build is staged privately unless the `PUBLISH` variable says otherwise.
 
-Run it from the **Actions** tab.
+Run the launcher build from the **Actions** tab. The separate **Build Android**
+workflow checks out the private game source with `CODE_TOKEN`, builds a signed APK,
+and uploads it as an Actions artifact. The game source is never copied into or
+committed to this repository.

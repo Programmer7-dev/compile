@@ -9,6 +9,12 @@ name: Build Android
 
 "on":
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit to build from the private game repository
+        required: true
+        default: master
+        type: string
   push:
     branches:
       - main
@@ -30,6 +36,7 @@ jobs:
         with:
           repository: ${{ env.CODE_REPO }}
           token: ${{ secrets.CODE_TOKEN }}
+          ref: ${{ inputs.source_ref || 'master' }}
 
       - name: Java
         uses: actions/setup-java@v4
